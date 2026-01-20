@@ -64,6 +64,7 @@ wandb/
 *.log
 logs/
 outputs/
+weights/
 
 # Testing
 .pytest_cache/

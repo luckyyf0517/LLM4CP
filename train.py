@@ -24,7 +24,7 @@ batch_size = 1024
 device = torch.device('cuda')
 
 best_loss = 100
-save_path = "Weights/U2D_LLM4CP.pth"
+save_path = "weights/U2D_LLM4CP.pth"
 train_TDD_r_path = "./data/Training Dataset/H_U_his_train.mat"
 train_TDD_t_path = "./data/Training Dataset/H_D_pre_train.mat"
 key = ['H_U_his_train', 'H_U_pre_train', 'H_D_pre_train']
