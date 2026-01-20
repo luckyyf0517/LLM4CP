@@ -21,8 +21,8 @@ device = torch.device('cuda')
 
 best_loss = 100
 save_path = "Weights/U2U_LLM4CP.pth"
-train_TDD_r_path = "./data/train/H_U_his_train.mat"
-train_TDD_t_path = "./data/train/H_U_pre_train.mat"
+train_TDD_r_path = "./data/Training Dataset/H_U_his_train.mat"
+train_TDD_t_path = "./data/Training Dataset/H_U_pre_train.mat"
 key = ['H_U_his_train', 'H_U_pre_train', 'H_D_pre_train']
 train_set = Dataset_Pro(train_TDD_r_path, train_TDD_t_path, is_train=1, is_U2D=0, is_few=0)  # creat data for training
 validate_set = Dataset_Pro(train_TDD_r_path, train_TDD_t_path, is_train=0, is_U2D=0)  # creat data for validation
