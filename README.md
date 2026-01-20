@@ -10,10 +10,42 @@ B. Liu, X. Liu, S. Gao, X. Cheng and L. Yang, "LLM4CP: Adapting Large Language M
 
 
 ## Dataset Preparation
-The datasets used in this paper can be downloaded in the following links.  
-[[Training Dataset]](https://pan.baidu.com/s/19DtLPftHomCb6_1V2lREtw?pwd=3gbv)
-[[Testing Dataset]](https://pan.baidu.com/s/10KzmwC1jncozOGNZ02Hlaw?pwd=sxfd)
-👉 Alternative Huggingface download link: [Dataset](https://huggingface.co/datasets/liuboxun/LLM4CP-dataset)
+
+### Method 1: Automatic Download (Recommended)
+
+```bash
+# Install dependencies
+pip install huggingface_hub
+
+# Download dataset
+python download_data.py
+```
+
+The script will automatically download and organize the dataset into the following structure:
+
+```
+./data/
+├── train/
+│   ├── H_U_his_train.mat
+│   └── H_U_pre_train.mat
+└── test/
+    ├── H_U_his_test.mat
+    ├── H_U_pre_test.mat
+    ├── H_D_pre_test.mat
+    └── Umi/                    # Zero-shot testing scenario
+        ├── H_U_his_test.mat
+        ├── H_U_pre_test.mat
+        └── H_D_pre_test.mat
+```
+
+### Method 2: Manual Download
+
+The datasets can also be downloaded manually:
+- [[Baidu Drive - Training]](https://pan.baidu.com/s/19DtLPftHomCb6_1V2lREtw?pwd=3gbv)
+- [[Baidu Drive - Testing]](https://pan.baidu.com/s/10KzmwC1jncozOGNZ02Hlaw?pwd=sxfd)
+- [HuggingFace Dataset](https://huggingface.co/datasets/liuboxun/LLM4CP-dataset)
+
+After downloading, place the files in the `./data/` directory as shown above.
 
 ## Dataset Generation
 We generate dataset via [QuaDRiGa](https://quadriga-channel-model.de/). To assist researchers in the field of channel prediction, we have provided a runnable demo file in the `data_generation` folder. For more detailed information about the QuDRiGa generator, please refer to its user documentation `uadriga_documentation_v2.8.1-0.pdf`.
@@ -25,10 +57,16 @@ Training and testing codes are in the current folder.
 -   The code for training is in `train.py`, while the code for test is in `test_tdd_full.py` and `test_fdd_full.py`. we also provide our pretrained model in [[Weights]](https://pan.baidu.com/s/1lysOqCyw44SGDQrH33Os5Q?pwd=nmqw).
 👉 Alternative Huggingface download link:[Model weights](https://huggingface.co/liuboxun/LLM4CP).
     
--   For full shot training, you need to set the file_path in the main function to match your training dataset. For example, if you want to try a full-shot experiment in a TDD scenario, you need to modify the `train_TDD_r_path` and `train_TDD_t_path` in `train.py` to the locations of your downloaded `H_U_his_train.mat` and `H_U_pre_train.mat`, respectively. Then, you can run `train.py`.
--   For few shot training, you need to set the file_path in the main function to match your training dataset. Then, you can set `is_few=1` when creating the training set in `train.py` like this: `train_set = Dataset_Pro(train_TDD_r_path, train_TDD_t_path, is_few=1)` and run `train.py`.
+-   For full shot training, run `train.py` directly (paths are pre-configured to `./data/train/`).
 
--   For testing, you also need to set the file_path in the main function to match your testing dataset. Then, you can run `test_tdd_full.py` to obtain the results in Figure 7 of the paper, and you can run `test_fdd_full.py` to obtain the results in Figure 8 of the paper. You can also try loading the data under `Testing Dataset/Umi` to test the models' zero-shot performance.
+-   For few shot training, modify `train.py` and set `is_few=1`:
+    ```python
+    train_set = Dataset_Pro(train_TDD_r_path, train_TDD_t_path, is_few=1)
+    ```
+
+-   For testing, run `test_tdd_full.py` (Figure 7 results) or `test_fdd_full.py` (Figure 8 results). Paths are pre-configured to `./data/test/`.
+
+-   For zero-shot testing, place Umi scenario data in `./data/test/Umi/` and update the paths in test scripts.
 
 ## Citation
 If you find this repo helpful, please cite our paper.
