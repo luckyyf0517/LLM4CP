@@ -16,22 +16,85 @@ $$ f_{\Omega}: \mathcal{H}_{in} \rightarrow \mathcal{H}_{out} $$
 
 ### Module A: Data Preprocessing & Input Representation
 
-Since neural networks operate on real numbers, the complex-valued CSI matrix must be decomposed.
+#### A.1 Raw Data Format (from .mat file)
 
-#### A.1 Raw Input Format
+The original CSI data stored in `.mat` files has the following physical structure:
 
-The input CSI tensor has the following dimensions:
+**Original tensor shape:** `[v, n, L, K, a, b, c]` = `[900, 10, 16, 48, 4, 4, 2]`
 
-*   **Raw Input:** $\mathbf{H}^u \in \mathbb{R}^{B \times L \times D_{in}}$
-    *   $B$: Batch size
+| Dimension | Symbol | Size | Physical Meaning |
+|-----------|--------|------|------------------|
+| Speed points | `v` | 900 | 10.1:0.1:100 km/h (velocity range) |
+| Samples per speed | `n` | 10 | Number of samples at each speed point |
+| Historical time slots | `L` | 16 | Past CSI observations (input sequence) |
+| Subcarriers | `K` | 48 | OFDM frequency domain resources |
+| Antenna rows | `a` | 4 | Vertical dimension of UPA (antenna panel) |
+| Antenna columns | `b` | 4 | Horizontal dimension of UPA (antenna panel) |
+| **Polarizations** | `c` | **2** | **Dual-polarization (+45° / -45°)** |
+
+**Key Physical Interpretation:**
+
+The antenna array is a **UPA (Uniform Planar Array)** with dual-polarized elements:
+
+$$ N_{antennas} = a \times b \times c = 4 \times 4 \times 2 = 32 \text{ spatial channels} $$
+
+- **Dimensions `a` and `b`**: Physical antenna positions (4×4 grid)
+- **Dimension `c=2`**: Dual-polarization - two orthogonal antenna elements at each physical position
+  - Index 0: +45° polarized signal (complex-valued)
+  - Index 1: -45° polarized signal (complex-valued)
+
+**Data Type:** The original data is stored as `complex128` (each value is already a complex number with real and imaginary parts).
+
+#### A.2 Data Preprocessing Pipeline
+
+##### Step 1: Rearrange (Flatten Spatial Dimensions)
+
+```python
+H = rearrange(H, 'v n L k a b c -> (v n) L (k a b c)')
+```
+
+**Input:** `[900, 10, 16, 48, 4, 4, 2]` (complex128)
+**Output:** `[9000, 16, 1536]` (complex128)
+
+The spatial dimensions are flattened: `K × a × b × c = 48 × 4 × 4 × 2 = 1536`
+
+##### Step 2: LoadBatch_ofdm (Spatial Expansion)
+
+```python
+H = rearrange(H, 'b t (k a) -> (b a) t k', a=32)
+```
+
+**Input:** `[9000, 16, 1536]` (complex)
+**Output:** `[288000, 16, 48]` (complex)
+
+This operation decomposes `1536 = 48 × 32` and expands the batch dimension:
+- `mul = 1536` is split into `K=48` (subcarriers) and `spatial=32` (antennas)
+- Batch size multiplies: `9000 × 32 = 288000` samples
+
+##### Step 3: Complex to Real Conversion
+
+```python
+H_real = np.zeros([B * 32, T, 48, 2])
+H_real[:, :, :, 0] = H.real  # Real part of complex signal
+H_real[:, :, :, 1] = H.imag  # Imaginary part of complex signal
+H_real = H_real.reshape([B * 32, T, 48 * 2])
+```
+
+**Input:** `[288000, 16, 48]` (complex128)
+**Output:** `[288000, 16, 96]` (float32)
+
+The complex-valued signal is decomposed into real and imaginary parts for neural network processing.
+
+#### A.3 Model Input Format
+
+*   **Model Input:** $\mathbf{X} \in \mathbb{R}^{B \times L \times D_{in}}$
+    *   $B$: Batch size (e.g., 1024)
     *   $L$: Sequence length (historical time slots, default: 16)
-    *   $D_{in} = 2 \cdot K \cdot N_t \cdot N_r$: Input feature dimension
-        *   $K$: Number of subcarriers (default: 48)
-        *   $N_t = UQ_h \times UQ_v$: Number of transmit antennas
-        *   $N_r = BQ_h \times BQ_v$: Number of receive antennas
-        *   Factor of 2: Real and Imaginary parts
+    *   $D_{in} = 2 \times K$: Input feature dimension = `2 × 48 = 96`
+        *   $K = 48$: Number of subcarriers (after LoadBatch_ofdm spatial expansion)
+        *   Factor of 2: **Real and Imaginary parts** of the complex CSI signal
 
-#### A.2 Normalization
+#### A.4 Normalization
 
 **Implementation:** Per-batch normalization (dynamic, not pre-computed)
 
@@ -308,7 +371,7 @@ Returns only the last `pred_len` time steps of the prediction.
 batch_size = 1024
 prev_len = 16      # Historical time slots
 pred_len = 4       # Future time slots
-K = 48             # Subcarriers
+K = 48             # Subcarriers (after LoadBatch_ofdm expansion)
 UQh, UQv, BQh, BQv = 1, 1, 1, 1
 enc_in = K * UQh * UQv * BQh * BQv = 48
 d_model = 768
@@ -317,7 +380,21 @@ patch_size = 4
 res_dim = 64
 ```
 
-### Tensor Evolution
+### Input Data Flow Summary
+
+**Raw Data (.mat file)** → **Model Input**:
+
+| Stage | Shape | Data Type | Description |
+|-------|-------|-----------|-------------|
+| 1. Raw `.mat` | `[900, 10, 16, 48, 4, 4, 2]` | complex128 | Original: 900 speeds × 10 samples × 16 time × 48 subcarriers × 4×4 UPA × 2 polarizations |
+| 2. Rearranged | `[9000, 16, 1536]` | complex128 | Flatten spatial: 48×4×4×2 = 1536 |
+| 3. LoadBatch_ofdm | `[288000, 16, 48]` | complex128 | Split 1536 = 48×32, expand batch ×32 |
+| 4. Real conversion | `[288000, 16, 96]` | float32 | Complex→Real: 48×2 (real+imag) |
+| 5. Batch sample | `[1024, 16, 96]` | float32 | Take one batch for model |
+
+**Note:** After LoadBatch_ofdm, the spatial dimension (32 antennas) is absorbed into the batch dimension. The model operates on **48 subcarriers per spatial channel**, treating each antenna-position combination as an independent sample.
+
+### Tensor Evolution Through Model
 
 | Stage | Operation | Tensor Shape | Code Location |
 |-------|-----------|--------------|---------------|
