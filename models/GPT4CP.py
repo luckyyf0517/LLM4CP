@@ -7,10 +7,26 @@ import torch.nn.functional as F
 from torch import optim
 from transformers import GPT2ForSequenceClassification
 from transformers.models.gpt2.modeling_gpt2 import GPT2Model
+from huggingface_hub import login
 from einops import rearrange
 from Embed import DataEmbedding
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
+# Try to login to HuggingFace if token is available
+hf_token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
+if hf_token:
+    try:
+        login(token=hf_token)
+        logger.debug("Successfully logged in to HuggingFace")
+    except Exception as e:
+        logger.debug(f"HuggingFace login failed: {e}")
 
 
 class ChannelAttention(nn.Module):
@@ -81,20 +97,25 @@ class Model(nn.Module):
 
         self.enc_embedding1 = DataEmbedding(2 * self.enc_in, self.d_model, embed, freq, dropout)
 
+        # Get token for model loading
+        hf_token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
+        token_kwargs = {'token': hf_token} if hf_token else {}
+
+        logger.info(f"Initializing GPT-2 model: {gpt_type}")
         if gpt_type == 'gpt2-medium':
-            self.gpt2 = GPT2Model.from_pretrained('gpt2-medium', output_attentions=True, output_hidden_states=True)
+            self.gpt2 = GPT2Model.from_pretrained('gpt2-medium', output_attentions=True, output_hidden_states=True, **token_kwargs)
             self.gpt2.h = self.gpt2.h[:gpt_layers]
             self.gpt_dim = 1024
         elif gpt_type == 'gpt2-large':
-            self.gpt2 = GPT2Model.from_pretrained('gpt2-large', output_attentions=True, output_hidden_states=True)
+            self.gpt2 = GPT2Model.from_pretrained('gpt2-large', output_attentions=True, output_hidden_states=True, **token_kwargs)
             self.gpt2.h = self.gpt2.h[:gpt_layers]
             self.gpt_dim = 1280
         elif gpt_type == 'gpt2-xl':
-            self.gpt2 = GPT2Model.from_pretrained('gpt2-xl', output_attentions=True, output_hidden_states=True)
+            self.gpt2 = GPT2Model.from_pretrained('gpt2-xl', output_attentions=True, output_hidden_states=True, **token_kwargs)
             self.gpt2.h = self.gpt2.h[:gpt_layers]
             self.gpt_dim = 1600
         else:
-            self.gpt2 = GPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True)
+            self.gpt2 = GPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True, **token_kwargs)
             self.gpt2.h = self.gpt2.h[:gpt_layers]
             self.gpt_dim = 768
 
@@ -173,8 +194,8 @@ if __name__ == '__main__':
     model = Model(UQh=1, UQv=1, BQh=1, BQv=1).to(device)
     inputs = torch.rand(3, 16, 96).to(device)
     out = model(inputs, None, None, None)
-    print(out.shape)
+    logger.info(f"Output shape: {out.shape}")
     total = sum([param.nelement() for param in model.parameters()])
-    print("Number of parameter: %.5fM" % (total / 1e6))
+    logger.info(f"Number of parameter: {total / 1e6:.5f}M")
     total_learn = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("Number of learnable parameter: %.5fM" % (total_learn / 1e6))
+    logger.info(f"Number of learnable parameter: {total_learn / 1e6:.5f}M")

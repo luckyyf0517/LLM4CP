@@ -16,6 +16,13 @@ import hdf5storage
 import tqdm
 from pvec import pronyvec
 from PAD import PAD3
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 if __name__ == "__main__":
     # demo
@@ -37,7 +44,7 @@ if __name__ == "__main__":
     label_len = 12
     pred_len = 4
     K, Nt, Nr, SR = (48, 16, 1, 1)
-    print("Total model nums:", len(model_test_enable))
+    logger.info(f"Total model nums: {len(model_test_enable)}")
     # load model and test
     criterion = NMSELoss()
     criterion_se = SE_Loss(snr=10, device=device)
@@ -49,8 +56,8 @@ if __name__ == "__main__":
     else:
         test_data_pred_base = hdf5storage.loadmat(pred_path)['H_U_pre_test']
     for i in range(len(model_test_enable)):
-        print("---------------------------------------------------------------")
-        print("loading ", i + 1, "th model......", model_test_enable[i])
+        logger.info("---------------------------------------------------------------")
+        logger.info(f"Loading {i + 1}th model: {model_test_enable[i]}")
         if model_test_enable[i] not in ['pad', 'pvec', 'np']:
             model = torch.load(model_path[model_test_enable[i]], map_location=device).to(device)
         for speed in range(0, 10):
@@ -102,9 +109,11 @@ if __name__ == "__main__":
                         test_loss_stack.append(loss.item())
                         test_loss_stack_se.append(se.item())
                         test_loss_stack_se0.append(se0.item())
-                print("speed", speed, ":  NMSE:", np.nanmean(np.array(test_loss_stack)),
-                      "SE:", -np.nanmean(np.array(test_loss_stack_se)), "SE0:", -np.nanmean(np.array(test_loss_stack_se0)),
-                      "SE_per", np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0)))
+                nmse_mean = np.nanmean(np.array(test_loss_stack))
+                se_mean = -np.nanmean(np.array(test_loss_stack_se))
+                se0_mean = -np.nanmean(np.array(test_loss_stack_se0))
+                se_per = np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0))
+                logger.info(f"Speed {speed}: NMSE={nmse_mean:.7f}, SE={se_mean:.4f}, SE0={se0_mean:.4f}, SE_per={se_per:.4f}")
                 NMSE[i].append(np.nanmean(np.array(test_loss_stack)))
                 SE[i].append(np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0)))
             elif model_test_enable[i] in ['pad', 'pvec']:
@@ -129,9 +138,11 @@ if __name__ == "__main__":
                     test_loss_stack.append(loss.item())
                     test_loss_stack_se.append(se.item())
                     test_loss_stack_se0.append(se0.item())
-                print("speed", speed, ":  NMSE:", np.nanmean(np.array(test_loss_stack)),
-                      "SE:", -np.nanmean(np.array(test_loss_stack_se)), "SE0:", -np.nanmean(np.array(test_loss_stack_se0)),
-                      "SE_per", np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0)))
+                nmse_mean = np.nanmean(np.array(test_loss_stack))
+                se_mean = -np.nanmean(np.array(test_loss_stack_se))
+                se0_mean = -np.nanmean(np.array(test_loss_stack_se0))
+                se_per = np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0))
+                logger.info(f"Speed {speed}: NMSE={nmse_mean:.7f}, SE={se_mean:.4f}, SE0={se0_mean:.4f}, SE_per={se_per:.4f}")
                 NMSE[i].append(np.nanmean(np.array(test_loss_stack)))
                 SE[i].append(np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0)))
 
@@ -141,3 +152,4 @@ if __name__ == "__main__":
         fout_nmse.write(','.join(row))
         fout_nmse.write('\n')
     fout_nmse.close()
+    logger.info("Results saved to CSV file")

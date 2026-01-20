@@ -5,7 +5,9 @@ description = "LLM4CP: Adapting Large Language Models for Channel Prediction"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "torch==2.0.0",
+    "torch==2.4.1",  # CUDA 12.1 compatible
+    "torchvision==0.19.1",
+    "torchaudio==2.4.1",
     "numpy==1.24.4",
     "matplotlib==3.7.5",
     "h5py==3.10.0",
@@ -27,3 +29,20 @@ packages = ["."]
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+# Configure PyTorch to use CUDA 12-enabled version from official source
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux'" },
+]
+torchaudio = [
+  { index = "pytorch-cu121", marker = "sys_platform == 'linux'" },
+]

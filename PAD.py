@@ -1,5 +1,5 @@
 import numpy as np
-from numpy.core.shape_base import vstack, hstack
+from numpy import vstack, hstack
 from numpy.linalg import pinv, svd, norm
 from numpy import expand_dims, floor, abs
 import matplotlib.pyplot as plt 
