@@ -9,8 +9,9 @@
 import time
 import torch
 import numpy as np
+import json
 from data import LoadBatch_ofdm_1, LoadBatch_ofdm_2, noise, Transform_TDD_FDD
-from metrics import NMSELoss, SE_Loss
+from metrics import NMSELoss, SE_Loss, BER_Loss
 from einops import rearrange
 import hdf5storage
 import tqdm
@@ -25,6 +26,9 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 if __name__ == "__main__":
+    # Create outputs directory if not exists
+    os.makedirs('./outputs', exist_ok=True)
+
     # demo
     device = torch.device('cuda:0')
     is_U2D = 1
@@ -32,14 +36,14 @@ if __name__ == "__main__":
     pred_path = "./data/Testing Dataset/H_U_pre_test.mat"      # path of dataset [H_U_pre_test]
     pred_path_fdd = "./data/Testing Dataset/H_D_pre_test.mat"  # path of dataset [H_D_pre_test]
     model_path = {
-        'gpt': './Weights/full_shot_fdd/U2D_LLM4CP.pth',
-        'transformer': './Weights/full_shot_fdd/U2D_trans.pth',
-        'cnn': './Weights/full_shot_fdd/U2D_cnn.pth',
-        'gru': './Weights/full_shot_fdd/U2D_gru.pth',
-        'lstm': './Weights/full_shot_fdd/U2D_lstm.pth',
-        'rnn': './Weights/full_shot_fdd/U2D_rnn.pth'
+        'gpt': './weights/release/full_shot_fdd/U2D_LLM4CP.pth',
+        'transformer': './weights/release/full_shot_fdd/U2D_trans.pth',
+        'cnn': './weights/release/full_shot_fdd/U2D_cnn.pth',
+        'gru': './weights/release/full_shot_fdd/U2D_gru.pth',
+        'lstm': './weights/release/full_shot_fdd/U2D_lstm.pth',
+        'rnn': './weights/release/full_shot_fdd/U2D_rnn.pth'
     }
-    model_test_enable = ['gpt', 'transformer', 'cnn', 'gru', 'lstm', 'rnn', 'np']
+    model_test_enable = ['gpt']  # Test GPT model only
     prev_len = 16
     label_len = 12
     pred_len = 4
@@ -48,8 +52,10 @@ if __name__ == "__main__":
     # load model and test
     criterion = NMSELoss()
     criterion_se = SE_Loss(snr=10, device=device)
+    criterion_ber = BER_Loss(snr=10, device=device)
     NMSE = [[] for i in model_test_enable]
     SE = [[] for i in model_test_enable]
+    BER = [[] for i in model_test_enable]
     test_data_prev_base = hdf5storage.loadmat(prev_path)['H_U_his_test']
     if is_U2D:
         test_data_pred_base = hdf5storage.loadmat(pred_path_fdd)['H_D_pre_test']
@@ -64,6 +70,8 @@ if __name__ == "__main__":
             test_loss_stack = []
             test_loss_stack_se = []
             test_loss_stack_se0 = []
+            test_loss_stack_ber = []
+            test_loss_stack_ber0 = []
             test_data_prev = test_data_prev_base[[speed], ...]
             test_data_pred = test_data_pred_base[[speed], ...]
             test_data_prev = rearrange(test_data_prev, 'v b l k n m c -> (v b c) (n m) l (k)')
@@ -79,6 +87,7 @@ if __name__ == "__main__":
                 pred_data = LoadBatch_ofdm_2(test_data_pred)
                 bs = 64
                 cycle_times = lens // bs
+                logger.info(f"Model: {model_test_enable[i]}, Speed: {speed}, Starting evaluation with {cycle_times} batches...")
                 with torch.no_grad():
                     for cyt in range(cycle_times):
                         prev = prev_data[cyt * bs:(cyt + 1) * bs, :, :].to(device)
@@ -104,21 +113,55 @@ if __name__ == "__main__":
                         pred = rearrange(pred, '(b m) l k -> b l (k m)', b=bs)
                         se, se0 = criterion_se(h=Transform_TDD_FDD(out, Nt=4 * 4, Nr=1),
                                                    h0=Transform_TDD_FDD(pred, Nt=4 * 4, Nr=1))
+                        ber, ber0 = criterion_ber(h=Transform_TDD_FDD(out, Nt=4 * 4, Nr=1),
+                                                    h0=Transform_TDD_FDD(pred, Nt=4 * 4, Nr=1))
                         test_loss_stack.append(loss.item())
                         test_loss_stack_se.append(se.item())
                         test_loss_stack_se0.append(se0.item())
+                        test_loss_stack_ber.append(ber)
+                        test_loss_stack_ber0.append(ber0)
                     nmse_mean = np.nanmean(np.array(test_loss_stack))
                     se_mean = -np.nanmean(np.array(test_loss_stack_se))
                     se0_mean = -np.nanmean(np.array(test_loss_stack_se0))
                     se_per = np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0))
-                    logger.info(f"Speed {speed}: NMSE={nmse_mean:.7f}, SE={se_mean:.4f}, SE0={se0_mean:.4f}, SE_per={se_per:.4f}")
+                    ber_mean = np.nanmean(np.array(test_loss_stack_ber))
+                    ber0_mean = np.nanmean(np.array(test_loss_stack_ber0))
+                    logger.info(f"Speed {speed}: NMSE={nmse_mean:.7f}, SE={se_mean:.4f}, SE0={se0_mean:.4f}, SE_per={se_per:.4f}, BER={ber_mean:.6f}, BER0={ber0_mean:.6f}")
                     NMSE[i].append(np.nanmean(np.array(test_loss_stack)))
-                    SE[i].append(np.nanmean(np.array(test_loss_stack_se)) / np.nanmean(np.array(test_loss_stack_se0)))
+                    SE[i].append(se_mean)  # Store average SE, not percentage
+                    BER[i].append(np.nanmean(np.array(test_loss_stack_ber)))
 
-        fout_nmse = open(time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime()) + "_data_nmse_tdd_full.csv", "w")
-        for row in NMSE:
-            row = list(map(str, row))
-            fout_nmse.write(','.join(row))
-            fout_nmse.write('\n')
-        fout_nmse.close()
-        logger.info("Results saved to CSV file")
+        # Calculate overall averages across all velocities
+        nmse_overall = np.nanmean(NMSE[i])
+        se_overall = np.nanmean(SE[i])
+        ber_overall = np.nanmean(BER[i])
+        logger.info("=" * 80)
+        logger.info(f"Overall Average - NMSE={nmse_overall:.7f}, SE={se_overall:.4f}, BER={ber_overall:.6f}")
+        logger.info("=" * 80)
+
+    # Save NMSE data for plotting and average SE/BER to JSON
+    timestamp = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
+    results = {
+        "timestamp": timestamp,
+        "models": []
+    }
+
+    for j, model_name in enumerate(model_test_enable):
+        model_data = {
+            "name": model_name,
+            "nmse_per_velocity": [float(x) for x in NMSE[j]] if j < len(NMSE) else [],
+            "se_avg": float(np.nanmean(SE[j])) if j < len(SE) else 0.0,
+            "ber_avg": float(np.nanmean(BER[j])) if j < len(BER) else 0.0
+        }
+        results["models"].append(model_data)
+
+    # Save to JSON (fixed filename, no timestamp)
+    json_path = "./outputs/results_fdd_full.json"
+    with open(json_path, "w") as f:
+        json.dump(results, f, indent=4)
+    logger.info(f"Results saved to JSON: {json_path}")
+
+    # Generate plots and save averages
+    from utils.plotting import plot_nmse, save_averages
+    plot_nmse(json_path, "./outputs/nmse_vs_velocity.png")
+    save_averages(json_path, "./outputs/averages.json")
